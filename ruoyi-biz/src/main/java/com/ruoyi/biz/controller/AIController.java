@@ -17,7 +17,7 @@ import java.util.List;
 public class AIController {
 
     @PostMapping("/chat/stream")
-    public ResponseEntity<StreamingResponseBody> streamChat(@RequestBody String userMessage) {
+    public ResponseEntity<StreamingResponseBody> streamChat(@RequestBody List<AIMessage> historyMessages) {
         // 1. 创建客户端
         OpenAIClient client = OpenAI.chatClient(
                 OpenAIConfig.getApiKey(),
@@ -25,17 +25,17 @@ public class AIController {
                 OpenAIConfig.getProxy() != null ? OpenAIConfig.getProxy().toJavaProxy() : null
         );
 
-        // 2. 构建消息
-        List<AIMessage> messages = new ArrayList<>();
-        messages.add(new AIMessage(AIRole.SYSTEM, "你是一个有帮助的助手。"));
-        messages.add(new AIMessage(AIRole.USER, userMessage));
+        // 2. 构建消息列表
+        // 如果 historyMessages 为空，可以手动添加第一个 System 消息
+        if (historyMessages.isEmpty()) {
+            historyMessages.add(new AIMessage(AIRole.SYSTEM, "你是一个有帮助的助手。"));
+        }
 
-        // 3. 构建参数
+        // 3. 直接将前端传来的历史记录列表传给工具类
         ChatCompletionCreateParams params = OpenAI.chatParams(
                 OpenAIConfig.getModel(),
-                messages
+                historyMessages
         );
-
         // 4. 流式响应
         return OpenAI.chatStream(client, params, new OpenAI.StreamContentListener() {
             @Override
