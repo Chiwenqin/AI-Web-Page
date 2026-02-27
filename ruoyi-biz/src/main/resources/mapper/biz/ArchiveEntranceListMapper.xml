@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.biz.mapper.ArchiveEntranceListMapper">
+
+    <resultMap type="com.ruoyi.biz.domain.ArchiveEntranceList" id="ArchiveEntranceListResult">
+        <id property="id" column="id"/>
+        <result property="entranceCode" column="entrance_code"/>
+        <result property="entranceName" column="entrance_name"/>
+        <result property="villageId" column="village_id"/>
+        <result property="villageName" column="village_name"/>
+        <result property="buildingId" column="building_id"/>
+        <result property="buildingName" column="building_name"/>
+        <result property="houseCount" column="house_count"/>
+        <result property="buildingArea" column="building_area"/>
+        <result property="billingArea" column="billing_area"/>
+        <result property="status" column="status"/>
+        <result property="createPerson" column="create_person"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updatePerson" column="update_person"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="selectArchiveEntranceListVo">
+        SELECT
+            ae.id,
+            ae.entrance_code,
+            ae.entrance_name,
+            ae.village_id,
+            av.village_name,
+            ae.building_id,
+            ab.building_name,
+            ae.house_count,
+            ae.building_area,
+            ae.billing_area,
+            ae.status,
+            ae.create_person,
+            ae.create_time,
+            ae.update_person,
+            ae.update_time
+        FROM archive_entrance_list ae
+        LEFT JOIN archive_village_list av ON ae.village_id = av.id
+        LEFT JOIN archive_building_list ab ON ae.building_id = ab.id
+    </sql>
+
+    <select id="selectListPage" resultMap="ArchiveEntranceListResult">
+        <include refid="selectArchiveEntranceListVo"/>
+        ${ew.customSqlSegment}
+    </select>
+
+</mapper>
