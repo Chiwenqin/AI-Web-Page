@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.biz.mapper.ArchiveRoomListMapper">
+
+    <resultMap type="com.ruoyi.biz.domain.ArchiveRoomList" id="ArchiveRoomListResult">
+        <id property="id" column="id"/>
+        <result property="cardNumber" column="card_number"/>
+        <result property="villageId" column="village_id"/>
+        <result property="villageName" column="village_name"/>
+        <result property="buildingId" column="building_id"/>
+        <result property="buildingName" column="building_name"/>
+        <result property="entranceId" column="entrance_id"/>
+        <result property="entranceName" column="entrance_name"/>
+        <result property="roomNumber" column="room_number"/>
+        <result property="billingArea" column="billing_area"/>
+        <result property="heatingStatus" column="heating_status"/>
+        <result property="measurementMethod" column="measurement_method"/>
+        <result property="processData" column="process_data"/>
+        <result property="equipmentId" column="equipment_id"/>
+        <result property="currentSeason" column="current_season"/>
+        <result property="networkStatus" column="network_status"/>
+        <result property="networkSeason" column="network_season"/>
+        <result property="createPerson" column="create_person"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updatePerson" column="update_person"/>
+        <result property="updateTime" column="update_time"/>
+    </resultMap>
+
+    <sql id="selectArchiveRoomListVo">
+        SELECT
+            ar.id,
+            ar.card_number,
+            ar.village_id,
+            av.village_name,
+            ar.building_id,
+            ab.building_name,
+            ar.entrance_id,
+            ae.entrance_name,
+            ar.room_number,
+            ar.billing_area,
+            ar.heating_status,
+            ar.measurement_method,
+            ar.process_data,
+            ar.equipment_id,
+            ar.current_season,
+            ar.network_status,
+            ar.network_season,
+            ar.create_person,
+            ar.create_time,
+            ar.update_person,
+            ar.update_time
+        FROM archive_room_list ar
+        LEFT JOIN archive_village_list av ON ar.village_id = av.id
+        LEFT JOIN archive_building_list ab ON ar.building_id = ab.id
+        LEFT JOIN archive_entrance_list ae ON ar.entrance_id = ae.id
+    </sql>
+
+    <select id="selectListPage" resultMap="ArchiveRoomListResult">
+        <include refid="selectArchiveRoomListVo"/>
+        ${ew.customSqlSegment}
+    </select>
+
+</mapper>

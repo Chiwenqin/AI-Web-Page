@@ -142,6 +142,12 @@ public class ArchiveEntranceListController extends BaseController {
     @Log(title = "楼门信息", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody ArchiveEntranceList archiveEntranceList) {
+        // 自动填充创建人和创建时间
+        archiveEntranceList.setCreatePerson(getUsername());
+        archiveEntranceList.setCreateTime(new java.util.Date());
+        // 同时填充更新人和更新时间
+        archiveEntranceList.setUpdatePerson(getUsername());
+        archiveEntranceList.setUpdateTime(new java.util.Date());
         return toAjax(archiveEntranceListService.insertArchiveEntranceList(archiveEntranceList));
     }
 
@@ -152,6 +158,9 @@ public class ArchiveEntranceListController extends BaseController {
     @Log(title = "楼门信息", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody ArchiveEntranceList archiveEntranceList) {
+        // 自动填充更新人和更新时间
+        archiveEntranceList.setUpdatePerson(getUsername());
+        archiveEntranceList.setUpdateTime(new java.util.Date());
         return toAjax(archiveEntranceListService.updateArchiveEntranceList(archiveEntranceList));
     }
 

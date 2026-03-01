@@ -42,3 +42,12 @@ export function delEntrance(id) {
     method: 'delete'
   })
 }
+
+// 批量删除楼门档案
+export function batchDelEntrance(ids) {
+  return request({
+    url: '/biz/entrance/batch',
+    method: 'delete',
+    data: ids
+  })
+}

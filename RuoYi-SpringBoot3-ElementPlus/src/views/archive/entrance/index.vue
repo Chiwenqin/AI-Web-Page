@@ -128,7 +128,7 @@
 <script setup name="Entrance">
 import { ref, reactive, toRefs, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { listEntrance, getEntrance, delEntrance, addEntrance, updateEntrance } from '@/api/biz/entrance';
+import { listEntrance, getEntrance, delEntrance, addEntrance, updateEntrance, batchDelEntrance } from '@/api/biz/entrance';
 import { listArchiveVillageList } from '@/api/biz/ArchiveVillageList';
 import { listArchiveBuildingList } from '@/api/biz/ArchiveBuildingList';
 import { getCurrentInstance } from 'vue';
@@ -337,7 +337,12 @@ function entranceHandleDelete(row) {
     proxy.$modal
         .confirm('是否确认删除编号为"' + _ids + '"的数据项？')
         .then(function () {
-            return delEntrance(_ids);
+            // 区分单条删除和批量删除
+            if (Array.isArray(_ids)) {
+                return batchDelEntrance(_ids);
+            } else {
+                return delEntrance(_ids);
+            }
         })
         .then(() => {
             entranceGetList();
