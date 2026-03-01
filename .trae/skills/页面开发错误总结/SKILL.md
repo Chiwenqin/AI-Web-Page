@@ -45,6 +45,26 @@ description: "总结RuoYi项目页面开发常见错误和解决方案。在开�
 **解决方案**: 配置路由地址、权限字符、组件路径
 **检查点**: 提供完整的权限字符列表
 
+### 8. 数据库表引用错误
+**错误现象**: `Table 'xxx' doesn't exist`
+**解决方案**: 确保Mapper XML中引用的所有表都存在，或移除对不存在表的引用
+**检查点**: 检查XML中的所有表名是否正确
+
+### 9. 函数返回值类型不一致
+**错误现象**: `Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'then')`
+**解决方案**: 异步函数必须始终返回Promise，即使参数为空时也应返回`Promise.resolve()`
+**检查点**: 检查所有异步函数的返回值
+
+### 10. 创建人/更新人字段缺失
+**错误现象**: `Field 'create_person' doesn't have a default value`
+**解决方案**: 在Controller中手动设置创建人和更新人信息（使用`getUsername()`）
+**检查点**: 确保Controller的add和edit方法中都设置了这些字段
+
+### 11. 批量删除参数类型错误
+**错误现象**: `Cannot deserialize value of type 'java.lang.Long' from String "1,2"`
+**解决方案**: 区分单条删除和批量删除，调用正确的API接口
+**检查点**: 在前端添加数组判断，根据参数类型调用不同的删除接口
+
 ## 生成页面避免错误检查清单
 
 ### 一、后端代码检查（21项）
