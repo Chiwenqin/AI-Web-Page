@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          npm i -g pnpm
+          # 清理缓存以解决版本冲突
+          rm -rf ~/.npm/_cacache
+          rm -rf node_modules/.cache
+          rm -rf packages/core/node_modules
+          # 清理 pnpm store
+          pnpm store prune || true
+          # 重新安装依赖
+          pnpm install --force
+
+      - name: Build
+        run: |
+          # 构建项目 - 只构建 core 包
+          (cd packages/core && \
+            # 确保类型文件存在并生成入口文件
+            pnpm run aeac && \
+            # 跳过 update:plugin 步骤，避免 esbuild 版本冲突
+            # 直接构建 ES 和 UMD
+            pnpm run build:es && \
+            pnpm run build:umd)
+
+      - name: Create Release Pull Request
+        id: create_release
+        uses: changesets/action@v1
+        with:
+          publish: pnpm ci:publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
