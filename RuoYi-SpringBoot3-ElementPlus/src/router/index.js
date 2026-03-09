@@ -59,7 +59,8 @@ export const constantRoutes = [
   },
   {
     path: '/ai',
-    component: () => import('@/views/openAi/index'),
+    component: () => import('@/views/ai/index'),
+    hidden: true
   },
   {
     path: '',
