@@ -47,7 +47,7 @@ export const useSessionStore = defineStore('session', () => {
   const requestSessionList = async (page: number = currentPage.value, force: boolean = false) => {
     // 如果没有token就直接清空
     if (!userStore.token) {
-      sessionList.value = [];
+      sessionList.value = sessionList.value || [];
       return;
     }
 

@@ -21,15 +21,18 @@ export const request = hookFetch.create<BaseResponse, 'data' | 'rows'>({
 });
 
 function jwtPlugin(): HookFetchPlugin<BaseResponse> {
-  const userStore = useUserStore();
   return {
     name: 'jwt',
     beforeRequest: async (config) => {
+      // 直接在函数内部调用 useUserStore
+      const userStore = useUserStore();
       config.headers = new Headers(config.headers);
       config.headers.set('authorization', `Bearer ${userStore.token}`);
       return config;
     },
     afterResponse: async (response) => {
+      // 直接在函数内部调用 useUserStore
+      const userStore = useUserStore();
       // console.log(response);
       if (response.result?.code === 200) {
         return response;

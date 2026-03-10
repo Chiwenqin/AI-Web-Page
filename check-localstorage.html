@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check LocalStorage</title>
+</head>
+<body>
+    <h1>LocalStorage Content</h1>
+    <pre id="localStorageContent"></pre>
+    
+    <script>
+        const content = document.getElementById('localStorageContent');
+        let output = '';
+        
+        // Check all localStorage items
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            const value = localStorage.getItem(key);
+            output += `Key: ${key}\nValue: ${value}\n\n`;
+        }
+        
+        content.textContent = output || 'LocalStorage is empty';
+    </script>
+</body>
+</html>

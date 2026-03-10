@@ -59,8 +59,15 @@ export const constantRoutes = [
   },
   {
     path: '/ai',
-    component: () => import('@/views/ai/index'),
-    hidden: true
+    component: Layout,
+    hidden: true,
+    children: [
+      {
+        path: '',
+        name: 'AI',
+        meta: { title: 'AI助手', icon: 'chat-line-round', newWindow: true, link: 'http://localhost:5173' }
+      }
+    ]
   },
   {
     path: '',

@@ -1,6 +1,7 @@
 import router from '@/router'
 import { ElMessageBox, } from 'element-plus'
 import { login, logout, getInfo } from '@/api/login'
+import { aiAdminLogin, aiAdminLogout } from '@/api/aiAdmin'
 import { getToken, setToken, removeToken } from '@/utils/auth'
 import { isHttp, isEmpty } from "@/utils/validate"
 import defAva from '@/assets/images/user.png'
@@ -31,7 +32,24 @@ const useUserStore = defineStore(
             } else {
               setToken(res.token);
               this.token = res.token;
-              resolve();
+              // 自动登录 AI Admin
+              aiAdminLogin(username, password).then(aiRes => {
+                // 存储 AI Admin 的 token
+                if (aiRes.access_token || aiRes.token) {
+                  const aiToken = aiRes.access_token || aiRes.token;
+                  // 存储到 ai-admin 的 user store 中
+                  const aiUserStore = JSON.parse(localStorage.getItem('user') || '{}');
+                  aiUserStore.token = aiToken;
+                  localStorage.setItem('user', JSON.stringify(aiUserStore));
+                  // 同时存储到 AiAdmin-Token 中作为备份
+                  localStorage.setItem('AiAdmin-Token', aiToken);
+                }
+                resolve();
+              }).catch(aiError => {
+                console.log('AI Admin 登录失败:', aiError);
+                // AI Admin 登录失败不影响主系统登录
+                resolve();
+              });
             }
           }).catch(error => {
             reject(error)
@@ -79,6 +97,17 @@ const useUserStore = defineStore(
       logOut() {
         return new Promise((resolve, reject) => {
           logout(this.token).then(() => {
+            // 退出 AI Admin
+            aiAdminLogout().then(() => {
+              // 清除 AI Admin 的 token
+              localStorage.removeItem('AiAdmin-Token');
+              // 清除 ai-admin 的 user store
+              const aiUserStore = JSON.parse(localStorage.getItem('user') || '{}');
+              delete aiUserStore.token;
+              localStorage.setItem('user', JSON.stringify(aiUserStore));
+            }).catch(aiError => {
+              console.log('AI Admin 退出失败:', aiError);
+            });
             this.token = ''
             this.roles = []
             this.permissions = []
