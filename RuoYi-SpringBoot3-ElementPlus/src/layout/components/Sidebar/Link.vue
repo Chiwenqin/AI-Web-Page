@@ -12,36 +12,24 @@ const props = defineProps({
   to: {
     type: [String, Object],
     required: true
-  },
-  meta: {
-    type: Object,
-    default: () => {}
   }
 })
 
-const linkUrl = computed(() => {
-  return props.meta.link || props.to
-})
-
 const isExt = computed(() => {
-  return isExternal(linkUrl.value)
+  return isExternal(props.to)
 })
 
 const type = computed(() => {
-  if (isExt.value || props.meta.newWindow) {
+  if (isExt.value) {
     return 'a'
   }
   return 'router-link'
 })
 
 function linkProps() {
-  if (isExt.value || props.meta.newWindow) {
-    let href = linkUrl.value
-    if (typeof href === 'object') {
-      href = href.path
-    }
+  if (isExt.value) {
     return {
-      href: href,
+      href: props.to,
       target: '_blank',
       rel: 'noopener'
     }

@@ -64,8 +64,9 @@ export const constantRoutes = [
     children: [
       {
         path: '',
-        name: 'AI',
-        meta: { title: 'AI助手', icon: 'chat-line-round', newWindow: true, link: 'http://localhost:5173' }
+        component: () => import('@/views/ai/index'),
+        name: 'AiAssistant',
+        meta: { title: 'AI助手', icon: 'guide', noCache: true }
       }
     ]
   },
