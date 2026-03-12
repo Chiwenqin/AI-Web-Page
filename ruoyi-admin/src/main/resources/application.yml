@@ -161,6 +161,8 @@ tenant:
     - sys_user_post
     - sys_user_role
     - biz_region
+    - ai_chat_session
+    - ai_chat_message
   ignoreLoginNames:
     - admin
 
