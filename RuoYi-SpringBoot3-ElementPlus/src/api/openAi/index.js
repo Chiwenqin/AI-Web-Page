@@ -67,6 +67,11 @@ export const updateAiSessionTitle = (sessionId, title) => {
   return request({ url: `/api/ai/sessions/${sessionId}`, method: 'put', data: { title } })
 }
 
+/** 删除会话（及该会话下所有消息）。使用 POST 避免代理/网关不支持 DELETE 导致 500 */
+export const deleteAiSession = (sessionId) => {
+  return request({ url: `/api/ai/sessions/${sessionId}/delete`, method: 'post' })
+}
+
 /** 批量保存消息，messages: [{ role, content }] */
 export const saveAiMessages = (sessionId, messages) => {
   return request({ url: `/api/ai/sessions/${sessionId}/messages`, method: 'post', data: messages })

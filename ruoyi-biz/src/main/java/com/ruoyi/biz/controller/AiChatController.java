@@ -81,6 +81,23 @@ public class AiChatController extends BaseController {
     }
 
     /**
+     * 删除会话（及该会话下所有消息，校验归属）
+     * 同时提供 DELETE 与 POST，避免部分代理/网关不支持 DELETE 导致 500
+     */
+    @DeleteMapping("/sessions/{id}")
+    public AjaxResult deleteSession(@PathVariable Long id) {
+        sessionService.deleteSession(id);
+        return success();
+    }
+
+    /** 删除会话（POST 方式，用于不支持 DELETE 的代理环境） */
+    @PostMapping("/sessions/{id}/delete")
+    public AjaxResult deleteSessionPost(@PathVariable Long id) {
+        sessionService.deleteSession(id);
+        return success();
+    }
+
+    /**
      * 批量保存消息
      * body: [ { "role": "USER", "content": "..." }, { "role": "ASSISTANT", "content": "..." } ]
      */

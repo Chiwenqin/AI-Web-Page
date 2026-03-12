@@ -2,7 +2,9 @@ package com.ruoyi.biz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.ruoyi.biz.domain.AiChatMessage;
 import com.ruoyi.biz.domain.AiChatSession;
+import com.ruoyi.biz.mapper.AiChatMessageMapper;
 import com.ruoyi.biz.mapper.AiChatSessionMapper;
 import com.ruoyi.biz.service.IAiChatSessionService;
 import com.ruoyi.common.exception.ServiceException;
@@ -19,6 +21,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class AiChatSessionServiceImpl extends ServiceImpl<AiChatSessionMapper, AiChatSession> implements IAiChatSessionService {
+
+    private final AiChatMessageMapper messageMapper;
 
     @Override
     public List<AiChatSession> listByUserId(Long userId) {
@@ -55,5 +59,19 @@ public class AiChatSessionServiceImpl extends ServiceImpl<AiChatSessionMapper, A
         if (sessionId == null || userId == null) return false;
         AiChatSession session = getById(sessionId);
         return session != null && session.getUserId().equals(userId);
+    }
+
+    @Override
+    public void deleteSession(Long sessionId) {
+        if (sessionId == null) return;
+        Long userId = SecurityUtils.getUserId();
+        AiChatSession session = getById(sessionId);
+        if (session == null || !session.getUserId().equals(userId)) {
+            throw new ServiceException("会话不存在或无权操作");
+        }
+        LambdaQueryWrapper<AiChatMessage> q = new LambdaQueryWrapper<>();
+        q.eq(AiChatMessage::getSessionId, sessionId);
+        messageMapper.delete(q);
+        removeById(sessionId);
     }
 }

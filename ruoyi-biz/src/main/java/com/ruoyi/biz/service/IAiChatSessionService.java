@@ -29,4 +29,9 @@ public interface IAiChatSessionService extends IService<AiChatSession> {
      * 校验会话属于当前用户
      */
     boolean isSessionOwnedByUser(Long sessionId, Long userId);
+
+    /**
+     * 删除会话（及该会话下所有消息，校验归属）
+     */
+    void deleteSession(Long sessionId);
 }
