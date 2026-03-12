@@ -36,7 +36,7 @@
             <el-col :span="1.5">
                 <el-button type="warning" plain icon="Download" @click="entranceHandleExport" v-hasPermi="['biz:entrance:export']">导出</el-button>
             </el-col>
-            <right-toolbar v-model:showSearch="entranceShowSearch" @queryTable="entranceGetList"></right-toolbar>
+            <right-toolbar :showSearch="entranceShowSearch" @queryTable="entranceGetList"></right-toolbar>
         </el-row>
 
         <el-table v-loading="entranceLoading" :data="entranceList" @selection-change="entranceHandleSelectionChange">
@@ -72,13 +72,7 @@
             </el-table-column>
         </el-table>
 
-        <pagination
-            v-show="entranceTotal > 0"
-            :total="entranceTotal"
-            v-model:page="entranceQueryParams.pageNum"
-            v-model:limit="entranceQueryParams.pageSize"
-            @pagination="entranceGetList"
-        />
+        <pagination v-show="entranceTotal > 0" :total="entranceTotal" :page="entranceQueryParams.pageNum" :limit="entranceQueryParams.pageSize" @pagination="entranceGetList" />
 
         <!-- 添加或修改楼门档案对话框 -->
         <el-dialog :title="entranceTitle" v-model="entranceOpen" width="500px" append-to-body destroy-on-close>
