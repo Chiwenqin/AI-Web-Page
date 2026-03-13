@@ -1,64 +1,22 @@
 <template>
   <div class="ai-chat-page">
-    <!-- 左侧会话列表 -->
-    <aside v-loading="sessionLoading" class="ai-chat-sidebar">
-      <div class="ai-chat-sidebar-header">
-        <span class="ai-chat-sidebar-title">历史对话</span>
-        <el-button type="primary" size="small" @click="newChat">新对话</el-button>
-      </div>
-      <div class="ai-chat-session-list">
-        <div
-          v-for="s in sortedSessions"
-          :key="s.id"
-          class="ai-chat-session-item"
-          :class="{ active: currentSessionId === s.id }"
-          @click="selectSession(s.id)"
-        >
-          <div class="ai-chat-session-info" @click="editingSessionId === s.id && $event.stopPropagation()">
-            <template v-if="editingSessionId === s.id">
-              <el-input
-                v-model="editingTitle"
-                size="small"
-                placeholder="对话名称"
-                @keyup.enter="confirmEditTitle(s.id)"
-                @keyup.escape="cancelEditTitle"
-              />
-            </template>
-            <template v-else>
-              <span class="ai-chat-session-title">
-                <el-icon v-if="isPinned(s.id)" class="ai-chat-pin-icon"><Top /></el-icon>
-                {{ s.title }}
-              </span>
-              <span class="ai-chat-session-time">{{ formatSessionTime(s.updateTime) }}</span>
-            </template>
-          </div>
-          <div v-if="editingSessionId !== s.id" class="ai-chat-session-actions" @click.stop>
-            <el-dropdown trigger="click" @command="(cmd) => handleSessionCommand(cmd, s)">
-              <el-button type="primary" link size="small" class="ai-chat-more-btn">
-                <el-icon><MoreFilled /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu class="ai-chat-session-dropdown-menu">
-                  <el-dropdown-item command="pin">
-                    <el-icon><Top /></el-icon>
-                    <span>{{ isPinned(s.id) ? '取消固定' : '固定' }}</span>
-                  </el-dropdown-item>
-                  <el-dropdown-item command="rename">
-                    <el-icon><Edit /></el-icon>
-                    <span>重命名</span>
-                  </el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>
-                    <el-icon><Delete /></el-icon>
-                    <span>删除</span>
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </div>
-        </div>
-        <div v-if="!sessions.length" class="ai-chat-session-empty">暂无对话，点击「新对话」开始</div>
-      </div>
-    </aside>
+    <ChatSessionSidebar
+      :sorted-sessions="session.sortedSessions?.value || []"
+      :current-session-id="session.currentSessionId?.value"
+      :session-loading="sessionLoading"
+      :editing-session-id="session.editingSessionId?.value"
+      :editing-title="session.editingTitle?.value"
+      :format-session-time="session.formatSessionTime"
+      :is-pinned="session.isPinned"
+      @select="session.selectSession"
+      @new="onNewChat"
+      @rename="session.startEditTitle"
+      @pin="session.togglePin"
+      @delete="session.removeSession"
+      @confirm-edit="session.confirmEditTitle"
+      @cancel-edit="session.cancelEditTitle"
+      @update:editing-title="updateSessionEditingTitle"
+    />
 
     <div class="ai-chat-main">
       <div class="ai-chat-header">
@@ -67,111 +25,26 @@
       </div>
 
       <div class="ai-chat-body">
-        <div class="ai-chat-messages" ref="messageListRef" @click="handleMarkdownCopy">
-          <div
-            v-for="(msg, index) in messages"
-            :key="index"
-            class="ai-chat-message"
-            :class="msg.role === 'user' ? 'is-user' : 'is-assistant'"
-          >
-            <div class="ai-chat-avatar">
-              <el-avatar v-if="msg.role === 'user'" :size="32">
-                {{ userInitial }}
-              </el-avatar>
-              <el-avatar v-else :size="32">AI</el-avatar>
-            </div>
-            <div class="ai-chat-content">
-              <div class="ai-chat-name">
-                {{ msg.role === 'user' ? '我' : 'AI 助手' }}
-              </div>
-              <div class="ai-chat-bubble">
-                <template v-if="msg.role === 'assistant'">
-                  <div v-if="msg.content" class="ai-chat-markdown">
-                    <template v-if="isTypingAssistant(index)">
-                      <div class="ai-chat-typing-wrapper">
-                        <span class="ai-chat-typing-visible">{{ msg.content }}</span>
-                        <span class="ai-chat-typing-fog">{{ fogTail(msg.content) }}</span>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <div v-html="renderMarkdown(msg.content)"></div>
-                    </template>
-                  </div>
-                  <div
-                    v-else-if="loading && isLastAssistant(index)"
-                    class="ai-chat-text ai-chat-typing"
-                  >
-                    正在思考中...
-                  </div>
-                  <div v-else class="ai-chat-text">{{ msg.content }}</div>
-                </template>
-                <template v-else>
-                  <div v-if="editingMessageIndex === index" class="ai-chat-editing">
-                    <el-input
-                      v-model="editingMessageContent"
-                      type="textarea"
-                      :autosize="{ minRows: 1, maxRows: 4 }"
-                      size="small"
-                    />
-                    <div class="ai-chat-editing-actions">
-                      <el-button
-                        type="primary"
-                        size="small"
-                        @click="confirmEditUserMessage(index)"
-                      >
-                        完成编辑
-                      </el-button>
-                      <el-button size="small" @click="cancelEditUserMessage">
-                        取消
-                      </el-button>
-                    </div>
-                  </div>
-                  <div v-else class="ai-chat-text">{{ msg.content }}</div>
-                </template>
-              </div>
-              <div
-                v-if="msg.role === 'assistant'"
-                class="ai-chat-message-actions"
-              >
-                <el-button type="primary" link size="small" @click="handleCopyMessage(msg)">
-                  复制内容
-                </el-button>
-                <el-button
-                  v-if="isLastAssistant(index)"
-                  type="primary"
-                  link
-                  size="small"
-                  :disabled="loading"
-                  @click="handleRegenerateLast()"
-                >
-                  重新生成
-                </el-button>
-              </div>
-              <div
-                v-else
-                class="ai-chat-message-actions"
-              >
-                <el-button
-                  type="primary"
-                  link
-                  size="small"
-                  @click="startEditUserMessage(msg, index)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  type="primary"
-                  link
-                  size="small"
-                  @click="handleCopyUserMessage(msg)"
-                >
-                  复制
-                </el-button>
-              </div>
-            </div>
-          </div>
-
-        </div>
+        <ChatMessageList
+          ref="messageListRef"
+          :messages="messages"
+          :loading="loading"
+          :is-streaming="isStreaming"
+          :user-initial="userInitial"
+          :editing-message-index="editingMessageIndex"
+          :editing-message-content="editingMessageContent"
+          :collapsed-message-indexes="collapsedMessageIndexes"
+          @start-edit="startEditUserMessage"
+          @copy-user="handleCopyUserMessage"
+          @copy-assistant="handleCopyMessage"
+          @delete-user="handleDeleteUserMessage"
+          @toggle-collapse="toggleCollapseMessage"
+          @feedback="toggleAssistantFeedback"
+          @confirm-edit="confirmEditUserMessage"
+          @cancel-edit="cancelEditUserMessage"
+          @regenerate="handleRegenerateLast"
+          v-model:editing-message-content="editingMessageContent"
+        />
 
         <div class="ai-chat-input">
           <el-input
@@ -182,30 +55,47 @@
             @keyup.enter.exact.prevent="handleSend"
           />
           <div class="ai-chat-actions">
-            <span class="ai-chat-tip">回车发送，Shift+回车换行</span>
-            <el-dropdown
-              v-hasPermi="['biz:ArchiveVillageList:export', 'biz:ArchiveBuildingList:export']"
-              trigger="click"
-              @command="handleExportData"
-            >
-              <el-button type="primary" link>
-                <el-icon><Download /></el-icon>
-                导出系统数据
+            <div class="ai-chat-actions-left">
+              <span class="ai-chat-tip">回车发送，Shift+回车换行</span>
+              <el-tooltip
+                effect="dark"
+                content="关闭后仅使用本次提问，不携带历史对话，更适合一次性问题。"
+                placement="top"
+              >
+                <div class="ai-chat-context-switch">
+                  <span class="ai-chat-tip">携带上下文</span>
+                  <el-switch v-model="useHistoryContext" size="small" />
+                </div>
+              </el-tooltip>
+              <span v-if="isInputTooLong" class="ai-chat-length-tip">
+                问题较长，可能影响响应速度
+              </span>
+            </div>
+            <div class="ai-chat-actions-right">
+              <el-dropdown
+                v-hasPermi="['biz:ArchiveVillageList:export', 'biz:ArchiveBuildingList:export']"
+                trigger="click"
+                @command="handleExportData"
+              >
+                <el-button type="primary" link>
+                  <el-icon><Download /></el-icon>
+                  导出系统数据
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="village" v-hasPermi="['biz:ArchiveVillageList:export']">
+                      导出小区管理数据
+                    </el-dropdown-item>
+                    <el-dropdown-item command="building" v-hasPermi="['biz:ArchiveBuildingList:export']">
+                      导出楼栋管理数据
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button type="primary" :loading="loading && !isStreaming" @click="handleSend">
+                {{ isStreaming ? '停止' : '发送' }}
               </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="village" v-hasPermi="['biz:ArchiveVillageList:export']">
-                    导出小区管理数据
-                  </el-dropdown-item>
-                  <el-dropdown-item command="building" v-hasPermi="['biz:ArchiveBuildingList:export']">
-                    导出楼栋管理数据
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button type="primary" :loading="loading && !isStreaming" @click="handleSend">
-              {{ isStreaming ? '停止' : '发送' }}
-            </el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -216,22 +106,14 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
-import {
-  streamChatOpenAi,
-  getAiSessions,
-  getAiSessionMessages,
-  createAiSession,
-  saveAiMessages,
-  updateAiSessionTitle,
-  deleteAiSession
-} from '@/api/openAi'
-import { ElMessageBox } from 'element-plus'
-import { Top, MoreFilled, Edit, Delete, Download } from '@element-plus/icons-vue'
+import { streamChatOpenAi } from '@/api/openAi'
+import { Download } from '@element-plus/icons-vue'
 import { download } from '@/utils/request'
-import { marked } from 'marked'
-import hljs from 'highlight.js'
-import 'highlight.js/styles/github.css'
 import useUserStore from '@/store/modules/user'
+import { copyText } from '@/composables/useCopy'
+import { useAiChatSession } from '@/composables/useAiChatSession'
+import ChatSessionSidebar from './ChatSessionSidebar.vue'
+import ChatMessageList from './ChatMessageList.vue'
 
 const DEFAULT_WELCOME = [
   {
@@ -242,24 +124,21 @@ const DEFAULT_WELCOME = [
 ]
 
 const userStore = useUserStore()
+const messages = ref([...DEFAULT_WELCOME])
+const session = useAiChatSession(messages, DEFAULT_WELCOME)
 
 const input = ref('')
 const loading = ref(false)
 const isStreaming = ref(false)
-const sessionLoading = ref(false)
 const messageListRef = ref(null)
-const sessions = ref([])
-const currentSessionId = ref(null)
-const messages = ref([...DEFAULT_WELCOME])
-const editingSessionId = ref(null)
-const editingTitle = ref('')
 const editingMessageIndex = ref(null)
 const editingMessageContent = ref('')
-const PINNED_KEY = 'ai_pinned_sessions'
-const pinnedSessionIds = ref(JSON.parse(localStorage.getItem(PINNED_KEY) || '[]'))
+const collapsedMessageIndexes = ref([])
+const useHistoryContext = ref(true)
 
 let currentStreamAbort = null
 let currentTypewriterStop = null
+const MAX_HISTORY_TURNS = 10
 
 const userInitial = computed(() => {
   if (userStore.name) {
@@ -268,51 +147,36 @@ const userInitial = computed(() => {
   return '我'
 })
 
-/** 置顶的会话排在前面，其余按更新时间倒序 */
-const sortedSessions = computed(() => {
-  const list = [...(sessions.value || [])]
-  const pinned = pinnedSessionIds.value || []
-  return list.sort((a, b) => {
-    const aPin = pinned.includes(a.id)
-    const bPin = pinned.includes(b.id)
-    if (aPin && !bPin) return -1
-    if (!aPin && bPin) return 1
-    if (aPin && bPin) return new Date(b.updateTime || 0) - new Date(a.updateTime || 0)
-    return new Date(b.updateTime || 0) - new Date(a.updateTime || 0)
-  })
+/** 解包 ref，确保子组件收到的 loading 是布尔值，能正确响应变化 */
+const sessionLoading = computed(() => session.sessionLoading?.value ?? false)
+
+const isInputTooLong = computed(() => {
+  const text = input.value || ''
+  return text.length > 2000
 })
 
-function isLastAssistant(index) {
-  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
-    if (messages.value[i].role === 'assistant') {
-      return i === index
-    }
+function updateSessionEditingTitle(v) {
+  session.editingTitle.value = v
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    messageListRef.value?.scrollToBottom?.()
+  })
+}
+
+function toggleCollapseMessage(index) {
+  const arr = collapsedMessageIndexes.value.slice()
+  const i = arr.indexOf(index)
+  if (i >= 0) {
+    arr.splice(i, 1)
+  } else {
+    arr.push(index)
   }
-  return false
+  collapsedMessageIndexes.value = arr
 }
 
-function isTypingAssistant(index) {
-  return loading.value && isLastAssistant(index)
-}
-
-function fogTail(text) {
-  if (!text) return ''
-  const str = String(text)
-  const tailLen = Math.min(20, str.length)
-  return str.slice(-tailLen)
-}
-
-function isPinned(sessionId) {
-  return (pinnedSessionIds.value || []).includes(sessionId)
-}
-
-function handleSessionCommand(command, s) {
-  if (command === 'rename') startEditTitle(s)
-  else if (command === 'pin') togglePin(s.id)
-  else if (command === 'delete') removeSession(s.id)
-}
-
-function startEditUserMessage(msg, index) {
+function startEditUserMessage({ msg, index }) {
   if (!msg || msg.role !== 'user') return
   editingMessageIndex.value = index
   editingMessageContent.value = msg.content || ''
@@ -344,327 +208,99 @@ async function confirmEditUserMessage(index) {
   await sendContentToAi(newContent, { fromReask: true })
 }
 
-function startEditTitle(s) {
-  editingSessionId.value = s.id
-  editingTitle.value = s.title || ''
-}
+function handleDeleteUserMessage(index) {
+  if (index == null || index < 0 || index >= messages.value.length) return
+  const msg = messages.value[index]
+  if (!msg || msg.role !== 'user') return
 
-function cancelEditTitle() {
-  editingSessionId.value = null
-  editingTitle.value = ''
-}
+  messages.value.splice(index, 1)
+  collapsedMessageIndexes.value = (collapsedMessageIndexes.value || [])
+    .filter((i) => i !== index)
+    .map((i) => (i > index ? i - 1 : i))
 
-async function confirmEditTitle(sessionId) {
-  const title = (editingTitle.value || '').trim()
-  if (!title) {
-    cancelEditTitle()
-    return
+  if (editingMessageIndex.value != null) {
+    if (editingMessageIndex.value === index) {
+      cancelEditUserMessage()
+    } else if (editingMessageIndex.value > index) {
+      editingMessageIndex.value -= 1
+    }
   }
-  try {
-    await updateAiSessionTitle(sessionId, title)
-    const s = sessions.value.find((x) => x.id === sessionId)
-    if (s) s.title = title
-    ElMessage.success('已修改对话名称')
-  } catch (e) {
-    console.error(e)
-    ElMessage.error(e?.response?.data?.msg || e?.message || '修改失败')
-  }
-  cancelEditTitle()
 }
 
-function togglePin(sessionId) {
-  let list = [...(pinnedSessionIds.value || [])]
-  if (list.includes(sessionId)) {
-    list = list.filter((id) => id !== sessionId)
+function toggleAssistantFeedback({ msg, type }) {
+  if (!msg || msg.role !== 'assistant') return
+  if (msg.feedback === type) {
+    msg.feedback = undefined
   } else {
-    list = [sessionId, ...list]
+    msg.feedback = type
   }
-  pinnedSessionIds.value = list
-  localStorage.setItem(PINNED_KEY, JSON.stringify(list))
 }
 
-async function removeSession(sessionId) {
-  try {
-    await ElMessageBox.confirm('确定删除该对话吗？删除后无法恢复。', '删除对话', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-  } catch {
-    return
-  }
-  try {
-    await deleteAiSession(sessionId)
-    const list = (sessions.value || []).filter((s) => s.id !== sessionId)
-    sessions.value = list
-    const pinned = (pinnedSessionIds.value || []).filter((id) => id !== sessionId)
-    pinnedSessionIds.value = pinned
-    localStorage.setItem(PINNED_KEY, JSON.stringify(pinned))
-    if (currentSessionId.value === sessionId) {
-      currentSessionId.value = list.length ? list[0].id : null
-      if (list.length) {
-        const res = await getAiSessionMessages(list[0].id)
-        const msgList = res?.data ?? res ?? []
-        messages.value = Array.isArray(msgList) && msgList.length
-          ? msgList.map(mapApiMessageToView)
-          : [...DEFAULT_WELCOME]
-      } else {
-        messages.value = [...DEFAULT_WELCOME]
+function showAiError(targetMsg, message) {
+  if (!targetMsg) return
+  targetMsg.role = 'assistant'
+  targetMsg.isError = true
+  targetMsg.content = message || '调用 AI 接口失败，可稍后重试。'
+}
+
+async function callWithRetry(fn, retries = 1) {
+  let lastError
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fn()
+    } catch (e) {
+      lastError = e
+      const message = e?.message || ''
+      const isNetworkError = !e?.response && /Network Error|Failed to fetch|网络错误/i.test(message)
+      if (!isNetworkError || attempt === retries) {
+        throw lastError
       }
     }
-    ElMessage.success('已删除')
-  } catch (e) {
-    console.error(e)
-    ElMessage.error(e?.response?.data?.msg || e?.message || '删除失败')
   }
-}
-
-// Markdown + 代码高亮，代码块带语言标签与复制按钮
-function escapeHtml(s) {
-  if (s == null) return ''
-  const str = String(s)
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-const renderer = new marked.Renderer()
-renderer.code = function (code, lang, escaped) {
-  const langTrimmed = (lang || '').trim().split(/\s+/)[0] || ''
-  const langLabel = langTrimmed || 'plaintext'
-  const langDisplay = langLabel.charAt(0).toUpperCase() + langLabel.slice(1).toLowerCase()
-  let highlighted = code
-  if (this.options.highlight) {
-    const out = this.options.highlight(code, langTrimmed)
-    if (out != null && out !== code) highlighted = out
-  }
-  const copyTitle = '复制代码'
-  return (
-    '<div class="ai-code-block">' +
-    '<div class="ai-code-block-header">' +
-    '<span class="ai-code-block-lang">' + escapeHtml(langDisplay) + '</span>' +
-    '<button type="button" class="ai-code-block-copy" title="' + escapeHtml(copyTitle) + '">复制</button>' +
-    '</div>' +
-    '<pre><code class="language-' + escapeHtml(langLabel) + '">' + highlighted + '</code></pre>' +
-    '</div>'
-  )
-}
-
-marked.setOptions({
-  renderer,
-  highlight(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(code, { language: lang }).value
-      } catch (_) {}
-    }
-    try {
-      return hljs.highlightAuto(code).value
-    } catch (_) {
-      return code
-    }
-  }
-})
-function renderMarkdown(content) {
-  if (!content) return ''
-  try {
-    return marked.parse(content)
-  } catch (e) {
-    return content
-  }
-}
-
-function handleMarkdownCopy(e) {
-  const btn = e.target.closest('.ai-code-block-copy')
-  if (!btn) return
-  const block = btn.closest('.ai-code-block')
-  if (!block) return
-  const pre = block.querySelector('pre')
-  const codeEl = block.querySelector('pre code')
-  const text = (codeEl || pre) ? (codeEl || pre).textContent || '' : ''
-  if (!text) {
-    ElMessage.warning('没有可复制的内容')
-    return
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(() => {
-      ElMessage.success('已复制到剪贴板')
-    }).catch(() => {
-      fallbackCopy(text)
-    })
-  } else {
-    fallbackCopy(text)
-  }
-}
-
-function fallbackCopy(text) {
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-    ElMessage.success('已复制到剪贴板')
-  } catch (err) {
-    console.error(err)
-    ElMessage.error('复制失败，请手动选择复制')
-  }
-}
-
-async function copyText(text) {
-  const value = text || ''
-  if (!value) {
-    ElMessage.warning('没有可复制的内容')
-    return
-  }
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(value)
-    } else {
-      const textarea = document.createElement('textarea')
-      textarea.value = value
-      textarea.style.position = 'fixed'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
-    }
-    ElMessage.success('已复制到剪贴板')
-  } catch (e) {
-    console.error(e)
-    ElMessage.error('复制失败，请手动选择文本复制')
-  }
-}
-
-function formatSessionTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const sameDay = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  if (sameDay) {
-    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-function scrollToBottom() {
-  nextTick(() => {
-    const el = messageListRef.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
-}
-
-function mapApiMessageToView(m) {
-  const role = (m.role || '').toUpperCase()
-  return {
-    role: role === 'USER' ? 'user' : 'assistant',
-    content: m.content || '',
-    isCode: false
-  }
-}
-
-async function ensureCurrentSession() {
-  if (currentSessionId.value) return currentSessionId.value
-  try {
-    const res = await createAiSession('新对话')
-    const data = res?.data ?? res
-    const sid = data?.id
-    if (sid) {
-      currentSessionId.value = sid
-      sessions.value = [...(sessions.value || []), data].sort((a, b) => new Date(b.updateTime || 0) - new Date(a.updateTime || 0))
-      messages.value = [...DEFAULT_WELCOME]
-      return sid
-    }
-  } catch (e) {
-    console.error(e)
-    const msg = e?.response?.data?.msg || e?.msg || '创建会话失败'
-    ElMessage.error(msg)
-  }
-  return null
-}
-
-async function persistCurrentMessages(title, lastUserContent, lastAssistantContent) {
-  const sid = currentSessionId.value
-  if (!sid || lastUserContent === undefined) return
-  try {
-    const payload = [
-      { role: 'USER', content: lastUserContent },
-      { role: 'ASSISTANT', content: lastAssistantContent }
-    ]
-    await saveAiMessages(sid, payload)
-    if (title) await updateAiSessionTitle(sid, title)
-    const res = await getAiSessions()
-    const list = res?.data ?? res ?? []
-    sessions.value = Array.isArray(list) ? list : []
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-async function newChat() {
-  try {
-    sessionLoading.value = true
-    const res = await createAiSession('新对话')
-    const data = res?.data ?? res
-    if (data?.id) {
-      currentSessionId.value = data.id
-      const listRes = await getAiSessions()
-      const list = listRes?.data ?? listRes ?? []
-      sessions.value = Array.isArray(list) ? list : []
-      messages.value = [...DEFAULT_WELCOME]
-      scrollToBottom()
-    }
-  } catch (e) {
-    console.error(e)
-    const msg = e?.response?.data?.msg || e?.msg || '创建会话失败'
-    ElMessage.error(msg)
-  } finally {
-    sessionLoading.value = false
-  }
-}
-
-async function selectSession(sessionId) {
-  if (sessionId === currentSessionId.value) return
-  currentSessionId.value = sessionId
-  try {
-    const res = await getAiSessionMessages(sessionId)
-    const list = res?.data ?? res ?? []
-    const arr = Array.isArray(list) ? list : []
-    messages.value = arr.length ? arr.map(mapApiMessageToView) : [...DEFAULT_WELCOME]
-  } catch (e) {
-    console.error(e)
-    messages.value = [...DEFAULT_WELCOME]
-  }
-  scrollToBottom()
+  throw lastError
 }
 
 const buildHistoryMessages = () => {
-  return messages.value.map((m) => ({
+  const list = messages.value || []
+  if (!useHistoryContext.value) {
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      if (list[i].role === 'user') {
+        return [{ role: 'USER', message: list[i].content || '' }]
+      }
+    }
+    return []
+  }
+
+  const limited = []
+  let userCount = 0
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const m = list[i]
+    limited.push(m)
+    if (m.role === 'user') {
+      userCount += 1
+      if (userCount >= MAX_HISTORY_TURNS) break
+    }
+  }
+  limited.reverse()
+
+  return limited.map((m) => ({
     role: m.role === 'user' ? 'USER' : 'ASSISTANT',
     message: m.content
   }))
 }
 
 async function handleCopyMessage(msg) {
-  const text = msg?.content || ''
-  await copyText(text)
+  await copyText(msg?.content || '')
 }
 
 async function handleCopyUserMessage(msg) {
   if (!msg || msg.role !== 'user') return
-  const text = msg.content || ''
-  await copyText(text)
+  await copyText(msg.content || '')
 }
 
-/** 打字机展示：将流式 fullText 逐步写入 assistantMsg.content，每 30ms 追加 1 个字符 */
 const TYPEWRITER_INTERVAL = 30
 const TYPEWRITER_STEP = 1
+const MAX_TYPEWRITER_DURATION = 20000
 
 async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
   const streamTarget = ref('')
@@ -672,7 +308,6 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
   let streamDone = false
   let streamResult = ''
   const startTime = Date.now()
-  const MAX_TYPEWRITER_DURATION = 20000 // 45 秒兜底，防止长答案被截断
 
   let stopped = false
   currentTypewriterStop = () => {
@@ -692,10 +327,8 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
       const targetLen = streamTarget.value.length
       const currentLen = assistantMsg.content.length
 
-      // 超时兜底：直接展示全文并结束，避免一直卡住
       if (Date.now() - startTime > MAX_TYPEWRITER_DURATION) {
         if (timer) clearInterval(timer)
-        // 如果流已经结束，优先使用最终结果；否则用当前已收到的内容
         assistantMsg.content = streamResult || streamTarget.value
         onScroll()
         resolve(streamResult)
@@ -703,8 +336,15 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
       }
 
       if (currentLen < targetLen) {
-        // 根据剩余长度动态调整步长，避免长文打字时间过长
         const remaining = targetLen - currentLen
+        if (streamDone && remaining > 800) {
+          assistantMsg.content = streamTarget.value
+          onScroll()
+          if (timer) clearInterval(timer)
+          resolve(streamResult)
+          return
+        }
+
         let step = TYPEWRITER_STEP
         if (remaining > 500) step = 16
         else if (remaining > 300) step = 12
@@ -734,7 +374,6 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
 
 function stopCurrentStream() {
   if (!isStreaming.value) return
-
   if (typeof currentStreamAbort === 'function') {
     try {
       currentStreamAbort()
@@ -742,7 +381,6 @@ function stopCurrentStream() {
       console.error(e)
     }
   }
-
   if (typeof currentTypewriterStop === 'function') {
     try {
       currentTypewriterStop()
@@ -750,7 +388,6 @@ function stopCurrentStream() {
       console.error(e)
     }
   }
-
   isStreaming.value = false
   loading.value = false
   currentStreamAbort = null
@@ -761,12 +398,13 @@ async function handleRegenerateLast() {
   if (loading.value || isStreaming.value) return
   if (!messages.value.length) return
 
-  const lastAssistantIndex = (() => {
-    for (let i = messages.value.length - 1; i >= 0; i -= 1) {
-      if (messages.value[i].role === 'assistant') return i
+  let lastAssistantIndex = -1
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    if (messages.value[i].role === 'assistant') {
+      lastAssistantIndex = i
+      break
     }
-    return -1
-  })()
+  }
   if (lastAssistantIndex === -1) return
 
   let lastUserIndex = -1
@@ -781,7 +419,7 @@ async function handleRegenerateLast() {
     return
   }
 
-  const sid = await ensureCurrentSession()
+  const sid = await session.ensureCurrentSession()
   if (!sid) return
 
   const historyMessages = messages.value
@@ -803,25 +441,29 @@ async function handleRegenerateLast() {
     const assistantContent = await runTypewriter(
       assistantMsg,
       (streamTarget) =>
-        streamChatOpenAi(
-          historyMessages,
-          (fullText) => {
-            streamTarget.value = fullText
-          },
-          {
-            onAbort(controller) {
-              currentStreamAbort = () => controller.abort()
-            }
-          }
+        callWithRetry(
+          () =>
+            streamChatOpenAi(
+              historyMessages,
+              (fullText) => {
+                streamTarget.value = fullText
+              },
+              {
+                onAbort(controller) {
+                  currentStreamAbort = () => controller.abort()
+                }
+              }
+            ),
+          1
         ),
       scrollToBottom
     )
-    await persistCurrentMessages(undefined, lastUserContent, assistantContent)
+    await session.persistCurrentMessages(undefined, lastUserContent, assistantContent)
     scrollToBottom()
   } catch (e) {
     console.error(e)
-    assistantMsg.content = e?.message || '重新生成失败，请稍后重试。'
-    await persistCurrentMessages(undefined, lastUserContent, assistantMsg.content)
+    showAiError(assistantMsg, '重新生成失败，请稍后重试。')
+    await session.persistCurrentMessages(undefined, lastUserContent, assistantMsg.content || '')
     scrollToBottom()
   } finally {
     loading.value = false
@@ -831,13 +473,17 @@ async function handleRegenerateLast() {
   }
 }
 
-/** 导出系统数据：根据 command 调用对应业务导出并下载 */
 function handleExportData(command) {
   if (command === 'village') {
     download('biz/ArchiveVillageList/export', {}, `小区列_${Date.now()}.xlsx`)
   } else if (command === 'building') {
     download('biz/ArchiveBuildingList/export', {}, `楼栋信息_${Date.now()}.xlsx`)
   }
+}
+
+async function onNewChat() {
+  const ok = await session.newChat()
+  if (ok) scrollToBottom()
 }
 
 const handleSend = async () => {
@@ -850,11 +496,10 @@ const handleSend = async () => {
   }
   if (loading.value) return
 
-  // 自然语言触发导出：用户说「导出小区/楼栋」时直接触发下载并回复
   const exportVillage = /\导出/.test(content) && /小区|小区管理/.test(content)
   const exportBuilding = /\导出/.test(content) && /楼栋|楼栋管理/.test(content)
   if (exportVillage || exportBuilding) {
-    const sid = await ensureCurrentSession()
+    const sid = await session.ensureCurrentSession()
     if (!sid) return
     messages.value.push({ role: 'user', content, isCode: false })
     if (exportVillage) {
@@ -876,7 +521,7 @@ async function sendContentToAi(content, { fromReask = false } = {}) {
   const text = (content || '').trim()
   if (!text) return
 
-  const sid = await ensureCurrentSession()
+  const sid = await session.ensureCurrentSession()
   if (!sid) return
   const isFirstUserMessage = messages.value.filter((m) => m.role === 'user').length === 0
   const sessionTitle = text.slice(0, 20) + (text.length > 20 ? '...' : '')
@@ -904,24 +549,29 @@ async function sendContentToAi(content, { fromReask = false } = {}) {
     const assistantContent = await runTypewriter(
       assistantMsg,
       (streamTarget) =>
-        streamChatOpenAi(
-          history,
-          (fullText) => {
-            streamTarget.value = fullText
-          },
-          {
-            onAbort(controller) {
-              currentStreamAbort = () => controller.abort()
-            }
-          }
+        callWithRetry(
+          () =>
+            streamChatOpenAi(
+              history,
+              (fullText) => {
+                streamTarget.value = fullText
+              },
+              {
+                onAbort(controller) {
+                  currentStreamAbort = () => controller.abort()
+                }
+              }
+            ),
+          1
         ),
       scrollToBottom
     )
-    await persistCurrentMessages(isFirstUserMessage ? sessionTitle : undefined, text, assistantContent)
+    await session.persistCurrentMessages(isFirstUserMessage ? sessionTitle : undefined, text, assistantContent)
     scrollToBottom()
   } catch (e) {
-    assistantMsg.content = e?.message || '调用 AI 接口失败，请稍后重试或联系管理员检查 `/api/ai/chat/stream` 接口。'
-    await persistCurrentMessages(undefined, text, assistantMsg.content)
+    console.error(e)
+    showAiError(assistantMsg, '调用 AI 接口失败，请稍后重试或联系管理员检查 `/api/ai/chat/stream` 接口。')
+    await session.persistCurrentMessages(undefined, text, assistantMsg.content || '')
     scrollToBottom()
   } finally {
     loading.value = false
@@ -932,36 +582,8 @@ async function sendContentToAi(content, { fromReask = false } = {}) {
 }
 
 onMounted(async () => {
-  try {
-    sessionLoading.value = true
-    const res = await getAiSessions()
-    const list = res?.data ?? res ?? []
-    const arr = Array.isArray(list) ? list : []
-    sessions.value = arr
-    if (arr.length > 0) {
-      const latest = arr[0]
-      currentSessionId.value = latest.id
-      const msgRes = await getAiSessionMessages(latest.id)
-      const msgList = msgRes?.data ?? msgRes ?? []
-      const msgArr = Array.isArray(msgList) ? msgList : []
-      messages.value = msgArr.length ? msgArr.map(mapApiMessageToView) : [...DEFAULT_WELCOME]
-    } else {
-      const createRes = await createAiSession('新对话')
-      const data = createRes?.data ?? createRes
-      if (data?.id) {
-        currentSessionId.value = data.id
-        sessions.value = [data]
-        messages.value = [...DEFAULT_WELCOME]
-      }
-    }
-    scrollToBottom()
-  } catch (e) {
-    console.error(e)
-    const msg = e?.response?.data?.msg || e?.msg || '加载会话列表失败'
-    ElMessage.error(msg)
-  } finally {
-    sessionLoading.value = false
-  }
+  await session.loadSessions()
+  scrollToBottom()
 })
 
 onBeforeUnmount(() => {
@@ -972,124 +594,12 @@ onBeforeUnmount(() => {
 <style scoped>
 .ai-chat-page {
   display: flex;
-  /* 固定高度，避免主根出现滚动条，仅 ai-chat-messages 内部滚动 */
   height: calc(100vh - 84px);
   max-height: calc(100vh - 84px);
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   overflow: hidden;
-}
-
-.ai-chat-sidebar {
-  width: 220px;
-  flex-shrink: 0;
-  margin: 0;
-  min-height: 0;
-  border-right: 1px solid #ebeef5;
-  display: flex;
-  flex-direction: column;
-  background: #fafafa;
-}
-
-.ai-chat-sidebar-header {
-  padding: 12px;
-  border-bottom: 1px solid #ebeef5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ai-chat-sidebar-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.ai-chat-session-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.ai-chat-session-item {
-  padding: 10px 12px;
-  cursor: pointer;
-  border-left: 3px solid transparent;
-  transition: background 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.ai-chat-session-item:hover {
-  background: #f0f2f5;
-}
-
-.ai-chat-session-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.ai-chat-session-info .el-input {
-  width: 100%;
-}
-
-.ai-chat-session-actions {
-  flex-shrink: 0;
-  display: flex;
-  gap: 0;
-  opacity: 0.7;
-}
-
-.ai-chat-session-item:hover .ai-chat-session-actions {
-  opacity: 1;
-}
-
-.ai-chat-pin-icon {
-  margin-right: 4px;
-  vertical-align: middle;
-  font-size: 12px;
-  color: #e6a23c;
-}
-
-.ai-chat-more-btn {
-  padding: 2px 4px;
-}
-
-.ai-chat-more-btn .el-icon {
-  font-size: 16px;
-}
-
-
-.ai-chat-session-item.active {
-  background: #ecf5ff;
-  border-left-color: #409eff;
-}
-
-.ai-chat-session-title {
-  display: block;
-  font-size: 13px;
-  color: #303133;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-chat-session-time {
-  display: block;
-  font-size: 11px;
-  color: #909399;
-  margin-top: 2px;
-}
-
-.ai-chat-session-empty {
-  padding: 16px 12px;
-  font-size: 13px;
-  color: #909399;
-  text-align: center;
 }
 
 .ai-chat-main {
@@ -1128,201 +638,6 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
-.ai-chat-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 8px 4px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.ai-chat-message {
-  display: flex;
-  margin-bottom: 12px;
-}
-
-.ai-chat-message.is-user {
-  flex-direction: row-reverse;
-}
-
-.ai-chat-avatar {
-  flex: 0 0 auto;
-}
-
-.ai-chat-content {
-  max-width: 70%;
-}
-
-.ai-chat-message.is-user .ai-chat-content {
-  align-items: flex-end;
-}
-
-.ai-chat-message-actions {
-  margin: 4px 8px 0;
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-
-.ai-chat-message:hover .ai-chat-message-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.ai-chat-message.is-user .ai-chat-message-actions {
-  justify-content: flex-end;
-}
-
-.ai-chat-editing {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ai-chat-editing-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.ai-chat-name {
-  font-size: 12px;
-  color: #909399;
-  margin: 0 8px 4px;
-}
-
-.ai-chat-bubble {
-  margin: 0 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.ai-chat-message.is-user .ai-chat-bubble {
-  background-color: #409eff;
-  color: #fff;
-}
-
-.ai-chat-message.is-assistant .ai-chat-bubble {
-  background-color: #f5f7fa;
-  color: #303133;
-}
-
-.ai-chat-typing-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.ai-chat-typing-visible {
-  position: relative;
-  z-index: 1;
-}
-
-.ai-chat-typing-fog {
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: rgba(0, 0, 0, 0.18);
-  filter: blur(2px);
-  pointer-events: none;
-}
-
-.ai-chat-bubble-loading {
-  font-style: italic;
-  color: #909399;
-}
-
-.ai-chat-typing {
-  font-style: italic;
-  color: #909399;
-}
-
-.ai-chat-markdown {
-  white-space: normal;
-  word-break: break-word;
-}
-
-/* 代码块：语言标签 + 复制按钮头部，背景与消息气泡区分 */
-.ai-chat-markdown :deep(.ai-code-block) {
-  margin: 8px 0;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #eef0f3;
-  border: 1px solid #e4e7ed;
-}
-.ai-chat-markdown :deep(.ai-code-block-header) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #e8eaef;
-}
-.ai-chat-markdown :deep(.ai-code-block-lang) {
-  font-size: 12px;
-  color: #606266;
-}
-.ai-chat-markdown :deep(.ai-code-block-copy) {
-  font-size: 12px;
-  color: #409eff;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 6px;
-}
-.ai-chat-markdown :deep(.ai-code-block-copy:hover) {
-  color: #66b1ff;
-}
-.ai-chat-markdown :deep(.ai-code-block pre) {
-  margin: 0;
-  padding: 12px;
-  border-radius: 0;
-  overflow-x: auto;
-  background: #eef0f3;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.ai-chat-markdown :deep(.ai-code-block pre code) {
-  padding: 0;
-  background: none;
-}
-
-.ai-chat-markdown :deep(pre) {
-  margin: 8px 0;
-  padding: 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  background: #f6f8fa;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.ai-chat-markdown :deep(code) {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #f0f0f0;
-  font-size: 13px;
-}
-.ai-chat-markdown :deep(pre code) {
-  padding: 0;
-  background: none;
-}
-.ai-chat-markdown :deep(p) {
-  margin: 0 0 8px;
-}
-.ai-chat-markdown :deep(ul),
-.ai-chat-markdown :deep(ol) {
-  margin: 0 0 8px;
-  padding-left: 1.5em;
-}
-
 .ai-chat-input {
   border-top: 1px solid #ebeef5;
   padding-top: 8px;
@@ -1339,16 +654,27 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #909399;
 }
-</style>
 
-<style>
-/* 会话列表下拉菜单（teleport 到 body）图标与文字对齐 */
-.ai-chat-session-dropdown-menu.el-dropdown-menu .el-dropdown-menu__item {
+.ai-chat-actions-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
-.ai-chat-session-dropdown-menu.el-dropdown-menu .el-dropdown-menu__item .el-icon {
-  font-size: 14px;
+
+.ai-chat-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ai-chat-context-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-chat-length-tip {
+  font-size: 12px;
+  color: #e6a23c;
 }
 </style>
