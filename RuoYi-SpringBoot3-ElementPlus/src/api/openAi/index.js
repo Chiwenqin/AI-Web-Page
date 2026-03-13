@@ -5,22 +5,44 @@ import { getToken } from '@/utils/auth'
  * 流式调用 AI 对话接口，边收边回调
  * @param {Array<{ role: string, message: string }>} historyMessages 历史消息（role: USER/ASSISTANT/SYSTEM）
  * @param { (fullText: string) => void } onChunk 每收到一段就调用，参数为当前已收到的完整文本
+ * @param {{ signal?: AbortSignal, onAbort?: (controller: AbortController) => void }} [options] 取消控制等可选参数
  * @returns { Promise<string> } 流式结束后 resolve 最终完整内容（已去掉 [DONE]）
  */
-export function streamChatOpenAi(historyMessages, onChunk) {
+export function streamChatOpenAi(historyMessages, onChunk, options = {}) {
   const baseURL = import.meta.env.VITE_APP_BASE_API || ''
   const url = baseURL + '/api/ai/chat/stream'
   const token = getToken()
 
+  let fullText = ''
+
   return new Promise((resolve, reject) => {
-    fetch(url, {
+    let controller
+    let signal
+
+    if (options.signal) {
+      signal = options.signal
+    } else if (typeof AbortController !== 'undefined') {
+      controller = new AbortController()
+      signal = controller.signal
+      if (typeof options.onAbort === 'function') {
+        options.onAbort(controller)
+      }
+    }
+
+    const fetchOptions = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: 'Bearer ' + token } : {})
       },
       body: JSON.stringify(historyMessages)
-    })
+    }
+
+    if (signal) {
+      fetchOptions.signal = signal
+    }
+
+    fetch(url, fetchOptions)
       .then(async (response) => {
         if (!response.ok) {
           const errText = await response.text()
@@ -28,7 +50,6 @@ export function streamChatOpenAi(historyMessages, onChunk) {
         }
         const reader = response.body.getReader()
         const decoder = new TextDecoder('utf-8')
-        let fullText = ''
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -43,7 +64,14 @@ export function streamChatOpenAi(historyMessages, onChunk) {
         }
         resolve(fullText)
       })
-      .catch(reject)
+      .catch((err) => {
+        // 中断请求时返回当前已累积的内容，视为“正常停止”
+        if (err && err.name === 'AbortError') {
+          resolve(fullText)
+          return
+        }
+        reject(err)
+      })
   })
 }
 

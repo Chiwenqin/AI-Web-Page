@@ -106,10 +106,33 @@
                   <div v-else class="ai-chat-text">{{ msg.content }}</div>
                 </template>
                 <template v-else>
-                  <div class="ai-chat-text">{{ msg.content }}</div>
+                  <div v-if="editingMessageIndex === index" class="ai-chat-editing">
+                    <el-input
+                      v-model="editingMessageContent"
+                      type="textarea"
+                      :autosize="{ minRows: 1, maxRows: 4 }"
+                      size="small"
+                    />
+                    <div class="ai-chat-editing-actions">
+                      <el-button
+                        type="primary"
+                        size="small"
+                        @click="confirmEditUserMessage(index)"
+                      >
+                        完成编辑
+                      </el-button>
+                      <el-button size="small" @click="cancelEditUserMessage">
+                        取消
+                      </el-button>
+                    </div>
+                  </div>
+                  <div v-else class="ai-chat-text">{{ msg.content }}</div>
                 </template>
               </div>
-              <div v-if="msg.role === 'assistant'" class="ai-chat-message-actions">
+              <div
+                v-if="msg.role === 'assistant'"
+                class="ai-chat-message-actions"
+              >
                 <el-button type="primary" link size="small" @click="handleCopyMessage(msg)">
                   复制内容
                 </el-button>
@@ -122,6 +145,27 @@
                   @click="handleRegenerateLast()"
                 >
                   重新生成
+                </el-button>
+              </div>
+              <div
+                v-else
+                class="ai-chat-message-actions"
+              >
+                <el-button
+                  type="primary"
+                  link
+                  size="small"
+                  @click="startEditUserMessage(msg, index)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  type="primary"
+                  link
+                  size="small"
+                  @click="handleCopyUserMessage(msg)"
+                >
+                  复制
                 </el-button>
               </div>
             </div>
@@ -139,8 +183,28 @@
           />
           <div class="ai-chat-actions">
             <span class="ai-chat-tip">回车发送，Shift+回车换行</span>
-            <el-button type="primary" :loading="loading" @click="handleSend">
-              发送
+            <el-dropdown
+              v-hasPermi="['biz:ArchiveVillageList:export', 'biz:ArchiveBuildingList:export']"
+              trigger="click"
+              @command="handleExportData"
+            >
+              <el-button type="primary" link>
+                <el-icon><Download /></el-icon>
+                导出系统数据
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="village" v-hasPermi="['biz:ArchiveVillageList:export']">
+                    导出小区管理数据
+                  </el-dropdown-item>
+                  <el-dropdown-item command="building" v-hasPermi="['biz:ArchiveBuildingList:export']">
+                    导出楼栋管理数据
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button type="primary" :loading="loading && !isStreaming" @click="handleSend">
+              {{ isStreaming ? '停止' : '发送' }}
             </el-button>
           </div>
         </div>
@@ -150,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   streamChatOpenAi,
@@ -162,7 +226,8 @@ import {
   deleteAiSession
 } from '@/api/openAi'
 import { ElMessageBox } from 'element-plus'
-import { Top, MoreFilled, Edit, Delete } from '@element-plus/icons-vue'
+import { Top, MoreFilled, Edit, Delete, Download } from '@element-plus/icons-vue'
+import { download } from '@/utils/request'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
@@ -180,6 +245,7 @@ const userStore = useUserStore()
 
 const input = ref('')
 const loading = ref(false)
+const isStreaming = ref(false)
 const sessionLoading = ref(false)
 const messageListRef = ref(null)
 const sessions = ref([])
@@ -187,8 +253,13 @@ const currentSessionId = ref(null)
 const messages = ref([...DEFAULT_WELCOME])
 const editingSessionId = ref(null)
 const editingTitle = ref('')
+const editingMessageIndex = ref(null)
+const editingMessageContent = ref('')
 const PINNED_KEY = 'ai_pinned_sessions'
 const pinnedSessionIds = ref(JSON.parse(localStorage.getItem(PINNED_KEY) || '[]'))
+
+let currentStreamAbort = null
+let currentTypewriterStop = null
 
 const userInitial = computed(() => {
   if (userStore.name) {
@@ -239,6 +310,38 @@ function handleSessionCommand(command, s) {
   if (command === 'rename') startEditTitle(s)
   else if (command === 'pin') togglePin(s.id)
   else if (command === 'delete') removeSession(s.id)
+}
+
+function startEditUserMessage(msg, index) {
+  if (!msg || msg.role !== 'user') return
+  editingMessageIndex.value = index
+  editingMessageContent.value = msg.content || ''
+}
+
+function cancelEditUserMessage() {
+  editingMessageIndex.value = null
+  editingMessageContent.value = ''
+}
+
+async function confirmEditUserMessage(index) {
+  if (
+    index == null ||
+    index < 0 ||
+    index >= messages.value.length ||
+    messages.value[index].role !== 'user'
+  ) {
+    cancelEditUserMessage()
+    return
+  }
+  const newContent = (editingMessageContent.value || '').trim()
+  if (!newContent) {
+    ElMessage.warning('编辑后的内容不能为空')
+    return
+  }
+  messages.value[index].content = newContent
+  cancelEditUserMessage()
+  if (loading.value || isStreaming.value) return
+  await sendContentToAi(newContent, { fromReask: true })
 }
 
 function startEditTitle(s) {
@@ -413,6 +516,32 @@ function fallbackCopy(text) {
   }
 }
 
+async function copyText(text) {
+  const value = text || ''
+  if (!value) {
+    ElMessage.warning('没有可复制的内容')
+    return
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = value
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    ElMessage.success('已复制到剪贴板')
+  } catch (e) {
+    console.error(e)
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
+}
+
 function formatSessionTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -524,28 +653,13 @@ const buildHistoryMessages = () => {
 
 async function handleCopyMessage(msg) {
   const text = msg?.content || ''
-  if (!text) {
-    ElMessage.warning('没有可复制的内容')
-    return
-  }
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.style.position = 'fixed'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
-    }
-    ElMessage.success('已复制到剪贴板')
-  } catch (e) {
-    console.error(e)
-    ElMessage.error('复制失败，请手动选择文本复制')
-  }
+  await copyText(text)
+}
+
+async function handleCopyUserMessage(msg) {
+  if (!msg || msg.role !== 'user') return
+  const text = msg.content || ''
+  await copyText(text)
 }
 
 /** 打字机展示：将流式 fullText 逐步写入 assistantMsg.content，每 30ms 追加 1 个字符 */
@@ -560,8 +674,21 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
   const startTime = Date.now()
   const MAX_TYPEWRITER_DURATION = 20000 // 45 秒兜底，防止长答案被截断
 
+  let stopped = false
+  currentTypewriterStop = () => {
+    stopped = true
+  }
+
   return new Promise((resolve, reject) => {
     timer = setInterval(() => {
+      if (stopped) {
+        if (timer) clearInterval(timer)
+        assistantMsg.content = streamTarget.value
+        onScroll()
+        resolve(streamResult)
+        return
+      }
+
       const targetLen = streamTarget.value.length
       const currentLen = assistantMsg.content.length
 
@@ -605,8 +732,33 @@ async function runTypewriter(assistantMsg, getStreamPromise, onScroll) {
   })
 }
 
+function stopCurrentStream() {
+  if (!isStreaming.value) return
+
+  if (typeof currentStreamAbort === 'function') {
+    try {
+      currentStreamAbort()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  if (typeof currentTypewriterStop === 'function') {
+    try {
+      currentTypewriterStop()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  isStreaming.value = false
+  loading.value = false
+  currentStreamAbort = null
+  currentTypewriterStop = null
+}
+
 async function handleRegenerateLast() {
-  if (loading.value) return
+  if (loading.value || isStreaming.value) return
   if (!messages.value.length) return
 
   const lastAssistantIndex = (() => {
@@ -646,10 +798,22 @@ async function handleRegenerateLast() {
   const lastUserContent = messages.value[lastUserIndex].content || ''
 
   loading.value = true
+  isStreaming.value = true
   try {
     const assistantContent = await runTypewriter(
       assistantMsg,
-      (streamTarget) => streamChatOpenAi(historyMessages, (fullText) => { streamTarget.value = fullText }),
+      (streamTarget) =>
+        streamChatOpenAi(
+          historyMessages,
+          (fullText) => {
+            streamTarget.value = fullText
+          },
+          {
+            onAbort(controller) {
+              currentStreamAbort = () => controller.abort()
+            }
+          }
+        ),
       scrollToBottom
     )
     await persistCurrentMessages(undefined, lastUserContent, assistantContent)
@@ -661,29 +825,73 @@ async function handleRegenerateLast() {
     scrollToBottom()
   } finally {
     loading.value = false
+    isStreaming.value = false
+    currentStreamAbort = null
+    currentTypewriterStop = null
+  }
+}
+
+/** 导出系统数据：根据 command 调用对应业务导出并下载 */
+function handleExportData(command) {
+  if (command === 'village') {
+    download('biz/ArchiveVillageList/export', {}, `小区列_${Date.now()}.xlsx`)
+  } else if (command === 'building') {
+    download('biz/ArchiveBuildingList/export', {}, `楼栋信息_${Date.now()}.xlsx`)
   }
 }
 
 const handleSend = async () => {
   const content = input.value.trim()
-  if (!content || loading.value) return
+  if (!content) return
+
+  if (isStreaming.value) {
+    stopCurrentStream()
+    return
+  }
+  if (loading.value) return
+
+  // 自然语言触发导出：用户说「导出小区/楼栋」时直接触发下载并回复
+  const exportVillage = /\导出/.test(content) && /小区|小区管理/.test(content)
+  const exportBuilding = /\导出/.test(content) && /楼栋|楼栋管理/.test(content)
+  if (exportVillage || exportBuilding) {
+    const sid = await ensureCurrentSession()
+    if (!sid) return
+    messages.value.push({ role: 'user', content, isCode: false })
+    if (exportVillage) {
+      download('biz/ArchiveVillageList/export', {}, `小区列_${Date.now()}.xlsx`)
+      messages.value.push({ role: 'assistant', content: '已为你导出小区管理数据，请查看浏览器下载。', isCode: false })
+    } else {
+      download('biz/ArchiveBuildingList/export', {}, `楼栋信息_${Date.now()}.xlsx`)
+      messages.value.push({ role: 'assistant', content: '已为你导出楼栋管理数据，请查看浏览器下载。', isCode: false })
+    }
+    input.value = ''
+    scrollToBottom()
+    return
+  }
+  await sendContentToAi(content)
+  input.value = ''
+}
+
+async function sendContentToAi(content, { fromReask = false } = {}) {
+  const text = (content || '').trim()
+  if (!text) return
 
   const sid = await ensureCurrentSession()
   if (!sid) return
   const isFirstUserMessage = messages.value.filter((m) => m.role === 'user').length === 0
-  const sessionTitle = content.slice(0, 20) + (content.length > 20 ? '...' : '')
+  const sessionTitle = text.slice(0, 20) + (text.length > 20 ? '...' : '')
 
   messages.value.push({
     role: 'user',
-    content,
+    content: text,
     isCode: false
   })
-  input.value = ''
   scrollToBottom()
 
   const history = buildHistoryMessages()
 
   loading.value = true
+  isStreaming.value = true
   const assistantMsg = {
     role: 'assistant',
     content: '',
@@ -695,17 +903,31 @@ const handleSend = async () => {
   try {
     const assistantContent = await runTypewriter(
       assistantMsg,
-      (streamTarget) => streamChatOpenAi(history, (fullText) => { streamTarget.value = fullText }),
+      (streamTarget) =>
+        streamChatOpenAi(
+          history,
+          (fullText) => {
+            streamTarget.value = fullText
+          },
+          {
+            onAbort(controller) {
+              currentStreamAbort = () => controller.abort()
+            }
+          }
+        ),
       scrollToBottom
     )
-    await persistCurrentMessages(isFirstUserMessage ? sessionTitle : undefined, content, assistantContent)
+    await persistCurrentMessages(isFirstUserMessage ? sessionTitle : undefined, text, assistantContent)
     scrollToBottom()
   } catch (e) {
     assistantMsg.content = e?.message || '调用 AI 接口失败，请稍后重试或联系管理员检查 `/api/ai/chat/stream` 接口。'
-    await persistCurrentMessages(undefined, content, assistantMsg.content)
+    await persistCurrentMessages(undefined, text, assistantMsg.content)
     scrollToBottom()
   } finally {
     loading.value = false
+    isStreaming.value = false
+    currentStreamAbort = null
+    currentTypewriterStop = null
   }
 }
 
@@ -740,6 +962,10 @@ onMounted(async () => {
   } finally {
     sessionLoading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  stopCurrentStream()
 })
 </script>
 
@@ -937,10 +1163,31 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.ai-chat-message:hover .ai-chat-message-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .ai-chat-message.is-user .ai-chat-message-actions {
   justify-content: flex-end;
+}
+
+.ai-chat-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-chat-editing-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
 }
 
 .ai-chat-name {
